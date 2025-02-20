@@ -69,6 +69,14 @@ item whose display text needs to be different:
 <li role="option" data-autocomplete-value="bb8">BB-8 (astromech)</li>
 ```
 
+Use `data-no-result-found="true"` to show a no results message inside the autocomplete popover. Be sure to add `role="presentation"` 
+to this element so that screen readers do not mistake this as an auto-complete option. The auto-complete-element has built in functionality that
+handles aria-live announcing number of search results so this should be purely decorative. 
+
+```html
+<li role="presentation" aria-hidden="true" disabled data-no-result-found="true">No results found!</li>
+```
+
 ### A Note on Clear button
 While `input type="search"` comes with an `x` that clears the content of the field and refocuses it on many browsers, the implementation for this control is not keyboard accessible, and so we've opted to enable a customizable clear button so that your keyboard users will be able to interact with it.
 
@@ -119,6 +127,65 @@ completer.addEventListener('auto-complete-change', function(event) {
   console.log('Related input element', event.relatedTarget)
 })
 ```
+
+### CSP Trusted Types
+
+You can call
+`setCSPTrustedTypesPolicy(policy: TrustedTypePolicy | Promise<TrustedTypePolicy> | null)`
+from JavaScript to set a
+[CSP trusted types policy](https://web.dev/trusted-types/), which can perform
+(synchronous) filtering or rejection of the `fetch` response before it is
+inserted into the page:
+
+```ts
+import AutoCompleteElement from 'auto-complete-element'
+import DOMPurify from 'dompurify' // Using https://github.com/cure53/DOMPurify
+
+// This policy removes all HTML markup except links.
+const policy = trustedTypes.createPolicy('links-only', {
+  createHTML: (htmlText: string) => {
+    return DOMPurify.sanitize(htmlText, {
+      ALLOWED_TAGS: ['a'],
+      ALLOWED_ATTR: ['href'],
+      RETURN_TRUSTED_TYPE: true
+    })
+  }
+})
+AutoCompleteElement.setCSPTrustedTypesPolicy(policy)
+```
+
+The policy has access to the `fetch` response object. Due to platform
+constraints, only synchronous information from the response (in addition to the
+HTML text body) can be used in the policy:
+
+```ts
+import AutoCompleteElement from 'auto-complete-element'
+
+const policy = trustedTypes.createPolicy('require-server-header', {
+  createHTML: (htmlText: string, response: Response) => {
+    if (response.headers.get('X-Server-Sanitized') !== 'sanitized=true') {
+      // Note: this will reject the contents, but the error may be caught before it shows in the JS console.
+      throw new Error('Rejecting HTML that was not marked by the server as sanitized.')
+    }
+    return htmlText
+  }
+})
+AutoCompleteElement.setCSPTrustedTypesPolicy(policy)
+```
+
+Note that:
+
+- Only a single policy can be set, shared by all `AutoCompleteElement` fetches.
+- You should call `setCSPTrustedTypesPolicy()` ahead of any other load of
+  `auto-complete` element in your code.
+  - If your policy itself requires asynchronous work to construct, you can also
+    pass a `Promise<TrustedTypePolicy>`.
+  - Pass `null` to remove the policy.
+- Not all browsers
+  [support the trusted types API in JavaScript](https://caniuse.com/mdn-api_trustedtypes).
+  You may want to use the
+  [recommended tinyfill](https://github.com/w3c/trusted-types#tinyfill) to
+  construct a policy without causing issues in other browsers.
 
 ## Browser support
 
